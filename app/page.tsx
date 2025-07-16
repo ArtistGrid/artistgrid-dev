@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CopyIcon, Menu, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import Fuse from "fuse.js";
+import Image from "next/image";
 
 interface Artist {
   name: string;
@@ -55,7 +56,7 @@ export default function ArtistGallery() {
 
   // Fetch visitor count
   useEffect(() => {
-    fetch("https://121124.prigoana.com/artistgrid.cx")
+    fetch("https://121124.artistgrid.cx/artistgrid.cx")
       .then((res) => res.json())
       .then((data) => setVisitorCount(data.count))
       .catch((err) => console.error("Error fetching visitor count:", err));
@@ -245,17 +246,18 @@ export default function ArtistGallery() {
             >
               <CardContent className="p-4">
                 <div className="aspect-square w-full mb-3 bg-white flex items-center justify-center overflow-hidden rounded-lg">
-                  <img
-                    src={`/images/${artist.imageFilename}`}
-                    alt={artist.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = `/placeholder.svg?height=200&width=200&text=${encodeURIComponent(
-                        artist.name.charAt(0)
-                      )}&bg=000000&color=ffffff`;
-                    }}
-                  />
+                <img
+  src={`/images/${artist.imageFilename}`}
+  alt={artist.name}
+  className="w-full h-full object-cover"
+  onError={(e) => {
+    const target = e.target as HTMLImageElement;
+    target.src = `/placeholder.svg?height=200&width=200&text=${encodeURIComponent(
+      artist.name.charAt(0)
+    )}&bg=000000&color=ffffff`;
+  }}
+/>
+
                 </div>
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-white group-hover:text-black text-sm leading-tight transition-colors">
