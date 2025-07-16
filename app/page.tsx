@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useToast } from "@/components/ui/use-toast";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ExternalLink, Menu, X } from "lucide-react";
+import { CopyIcon, Menu, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import Fuse from "fuse.js";
 
@@ -15,11 +16,13 @@ interface Artist {
 
 export default function ArtistGallery() {
   const [artists, setArtists] = useState<Artist[]>([]);
+  const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const [filteredArtists, setFilteredArtists] = useState<Artist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const { toast } = useToast();
 
   const getImageFilename = (artistName: string): string => {
     return artistName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".png";
@@ -47,17 +50,23 @@ export default function ArtistGallery() {
         }
       }
     }
-
     return artists;
   };
 
+  // Fetch visitor count
+  useEffect(() => {
+    fetch("https://121124.prigoana.com/artistgrid.cx")
+      .then((res) => res.json())
+      .then((data) => setVisitorCount(data.count))
+      .catch((err) => console.error("Error fetching visitor count:", err));
+  }, []);
+
+  // Fetch and parse CSV artists
   useEffect(() => {
     const fetchArtists = async () => {
       try {
         const response = await fetch("./sheet.csv");
-        if (!response.ok) {
-          throw new Error("Failed to fetch CSV data");
-        }
+        if (!response.ok) throw new Error("Failed to fetch CSV data");
 
         const csvText = await response.text();
         const parsedArtists = parseCSV(csvText);
@@ -73,7 +82,7 @@ export default function ArtistGallery() {
     fetchArtists();
   }, []);
 
-  // Debounced fuzzy search
+  // Filter artists by search query with debounce
   useEffect(() => {
     const debounceTimeout = 150;
     const handler = setTimeout(() => {
@@ -92,16 +101,26 @@ export default function ArtistGallery() {
     return () => clearTimeout(handler);
   }, [searchQuery, artists]);
 
+  // Close info modal on any key press
   useEffect(() => {
     if (!showInfoModal) return;
-
     const handleKeyDown = () => setShowInfoModal(false);
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showInfoModal]);
 
+  // Normalize URL helper
+  const normalizeUrl = (url: string) => {
+    if (!/^https?:\/\//i.test(url)) {
+      return `https://trackerhub.cx/sh/${url}`;
+    }
+    return url;
+  };
+
+  // Handle artist card click
   const handleArtistClick = (url: string) => {
-    window.open(url, "_blank", "noopener,noreferrer");
+    const fullUrl = normalizeUrl(url);
+    window.open(fullUrl, "_blank", "noopener,noreferrer");
   };
 
   if (loading) {
@@ -112,11 +131,11 @@ export default function ArtistGallery() {
             {Array.from({ length: 10 }).map((_, i) => (
               <Card
                 key={i}
-                className="bg-black border-white border-2 rounded-lg"
+                className="bg-black border-white border-2 rounded-2xl"
               >
                 <CardContent className="p-4">
-                  <Skeleton className="aspect-square w-full mb-3 bg-white rounded-lg" />
-                  <Skeleton className="h-4 w-3/4 bg-white rounded" />
+                  <Skeleton className="aspect-square w-full mb-3 bg-white rounded-2xl" />
+                  <Skeleton className="h-4 w-3/4 bg-white rounded-full" />
                 </CardContent>
               </Card>
             ))}
@@ -139,23 +158,13 @@ export default function ArtistGallery() {
 
   return (
     <div className="min-h-screen bg-black p-6">
-      {!showInfoModal ? (
-        <button
-          onClick={() => setShowInfoModal(true)}
-          className="fixed top-6 left-6 z-50 p-2 bg-black border-2 border-white/40 text-white hover:bg-white hover:text-black hover:border-white focus:border-white transition-colors rounded-lg"
-          aria-label="Open info menu"
-        >
-          <Menu className="w-6 h-6" />
-        </button>
-      ) : (
-        <button
-          onClick={() => setShowInfoModal(false)}
-          className="fixed top-6 left-6 z-50 p-2 bg-black border-2 border-white/40 text-white hover:bg-white hover:text-black hover:border-white focus:border-white transition-colors rounded-lg"
-          aria-label="Close info modal"
-        >
-          <X className="w-6 h-6" />
-        </button>
-      )}
+      <button
+        onClick={() => setShowInfoModal(!showInfoModal)}
+        className="fixed top-6 left-6 z-50 p-3 bg-black border-2 border-white/40 text-white hover:bg-white hover:text-black hover:border-white focus:border-white transition-colors rounded-2xl"
+        aria-label={showInfoModal ? "Close info modal" : "Open info menu"}
+      >
+        {showInfoModal ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+      </button>
 
       {showInfoModal && (
         <div
@@ -163,16 +172,12 @@ export default function ArtistGallery() {
           onClick={() => setShowInfoModal(false)}
         >
           <div
-            className="bg-black border-2 border-white mx-4 mt-4 p-6 max-w-2xl rounded-lg"
+            className="bg-black border-2 border-white mx-4 mt-4 p-6 max-w-2xl rounded-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex-1 text-center">
-                <h2 className="text-2xl font-bold text-white underline">
-                  About ArtistGrid
-                </h2>
-              </div>
-            </div>
+            <h2 className="text-2xl font-bold text-white underline text-center mb-4">
+              About ArtistGrid
+            </h2>
             <div className="text-white space-y-4">
               <p>
                 This website is owned &amp; maintained by{" "}
@@ -203,13 +208,15 @@ export default function ArtistGallery() {
                   this Google Sheet
                 </a>
                 .
-                <br />
-                <br />
-                Note: if a tracker doesn't load / has very little content, go to
-                the "this Google Sheet" link at the top of the page.<br></br>
-                <br></br>We are not associated or endorsed by TrackerHub or any
-                of the artists on this page.
               </p>
+              <p>
+                Note: if a tracker doesn't load or has little content, visit the
+                link above. We are not affiliated with TrackerHub or the artists
+                listed here.
+              </p>
+              {visitorCount !== null && (
+                <p className="text-sm text-gray-300">You are visitor #{visitorCount}</p>
+              )}
             </div>
           </div>
         </div>
@@ -225,7 +232,7 @@ export default function ArtistGallery() {
             placeholder="Search artists..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-black border-2 text-white/40 border-white/40 hover:border-white hover:text-white transition-all duration-200 cursor-pointer group rounded-lg"
+            className="bg-black border-2 text-white/40 border-white/40 hover:border-white hover:text-white transition-all duration-200 cursor-pointer rounded-2xl"
           />
         </header>
 
@@ -233,11 +240,11 @@ export default function ArtistGallery() {
           {filteredArtists.map((artist, index) => (
             <Card
               key={index}
-              className="bg-black border-2 border-white/40 hover:border-white hover:bg-white hover:text-black transition-all duration-200 cursor-pointer group rounded-lg"
+              className="bg-black border-2 border-white/40 hover:border-white hover:bg-white hover:text-black transition-all duration-200 cursor-pointer group rounded-2xl"
               onClick={() => handleArtistClick(artist.url)}
             >
               <CardContent className="p-4">
-                <div className="aspect-square w-full mb-3 bg-white border-2 border-none flex items-center justify-center overflow-hidden rounded-lg">
+                <div className="aspect-square w-full mb-3 bg-white flex items-center justify-center overflow-hidden rounded-lg">
                   <img
                     src={`/images/${artist.imageFilename}`}
                     alt={artist.name}
@@ -254,7 +261,39 @@ export default function ArtistGallery() {
                   <h3 className="font-semibold text-white group-hover:text-black text-sm leading-tight transition-colors">
                     {artist.name}
                   </h3>
-                  <ExternalLink className="w-4 h-4 text-white group-hover:text-black transition-colors" />
+
+                  <CopyIcon
+  className="w-4 h-4 p-0 text-white group-hover:text-black transition-colors cursor-pointer"
+  onClick={(e) => {
+    e.stopPropagation();
+
+    // Get full normalized URL
+    const fullUrl = normalizeUrl(artist.url);
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(fullUrl);
+
+    // Optional animation
+    const target = e.currentTarget;
+    target.animate(
+      [
+        { transform: "scale(1)" },
+        { transform: "scale(1.1)" },
+        { transform: "scale(1)" },
+      ],
+      {
+        duration: 200,
+        easing: "ease-in-out",
+      }
+    );
+
+    // Optional: show toast that full URL was copied
+    toast({
+      title: "Copied!",
+      description: `${fullUrl} copied to clipboard.`,
+    });
+  }}
+/>
                 </div>
               </CardContent>
             </Card>
@@ -263,7 +302,7 @@ export default function ArtistGallery() {
 
         {filteredArtists.length === 0 && !loading && (
           <div className="text-center py-12">
-            <p className="text-white">No artists found in the CSV file.</p>
+            <p className="text-white">No artists found.</p>
           </div>
         )}
       </div>
