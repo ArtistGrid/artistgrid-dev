@@ -54,7 +54,7 @@ export default function ArtistGallery() {
   useEffect(() => {
     const fetchArtists = async () => {
       try {
-        const response = await fetch("http://artistgrid.cx/trackers.csv");
+        const response = await fetch("./sheet.csv");
         if (!response.ok) {
           throw new Error("Failed to fetch CSV data");
         }
