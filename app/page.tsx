@@ -247,7 +247,7 @@ export default function ArtistGallery() {
               <CardContent className="p-4">
                 <div className="aspect-square w-full mb-3 bg-white flex items-center justify-center overflow-hidden rounded-lg">
                 <img
-  src={`/images/${artist.imageFilename}`}
+  src={`https://assets.artistgrid.cx/img/${artist.imageFilename}`}
   alt={artist.name}
   className="w-full h-full object-cover"
   onError={(e) => {
