@@ -56,7 +56,7 @@ export default function ArtistGallery() {
 
   // Fetch visitor count
   useEffect(() => {
-    fetch("https://121124.artistgrid.cx/artistgrid.cx")
+    fetch("https://111224.artistgrid.cx/artistgrid.cx/")
       .then((res) => res.json())
       .then((data) => setVisitorCount(data.count))
       .catch((err) => console.error("Error fetching visitor count:", err));
