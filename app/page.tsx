@@ -218,6 +218,12 @@ export default function ArtistGallery() {
                 link above. We are not affiliated with TrackerHub or the artists
                 listed here.
               </p>
+                            <p><a 
+              href="https://github.com/ArtistGrid"
+                                target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+              >GitHub</a></p>
               {visitorCount !== null && (
                 <p className="text-sm text-gray-300">You are visitor #{visitorCount}</p>
               )}
@@ -337,13 +343,22 @@ export default function ArtistGallery() {
                 </a>
                 .
               </p>
+
               <p>
                 Note: if a tracker doesn't load or has little content, visit the link above.
                 We are not affiliated with TrackerHub or the artists listed here.
               </p>
+
+                            <p><a 
+              href="https://github.com/ArtistGrid"
+                                target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+              >GitHub</a></p>
               {visitorCount !== null && (
                 <p className="text-xs text-gray-300">You are visitor #{visitorCount}</p>
               )}
+              
             </div>
           </div>
         )}
