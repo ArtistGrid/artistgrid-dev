@@ -7,7 +7,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CopyIcon, Menu, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import Fuse from "fuse.js";
-import Image from "next/image";
 
 interface Artist {
   name: string;
@@ -23,6 +22,7 @@ export default function ArtistGallery() {
   const [error, setError] = useState<string | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
   const { toast } = useToast();
 
   const getImageFilename = (artistName: string): string => {
@@ -54,7 +54,13 @@ export default function ArtistGallery() {
     return artists;
   };
 
-  // Fetch visitor count
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 640);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
   useEffect(() => {
     fetch("https://111224.artistgrid.cx/artistgrid.cx/")
       .then((res) => res.json())
@@ -62,7 +68,6 @@ export default function ArtistGallery() {
       .catch((err) => console.error("Error fetching visitor count:", err));
   }, []);
 
-  // Fetch and parse CSV artists
   useEffect(() => {
     const fetchArtists = async () => {
       try {
@@ -83,7 +88,6 @@ export default function ArtistGallery() {
     fetchArtists();
   }, []);
 
-  // Filter artists by search query with debounce
   useEffect(() => {
     const debounceTimeout = 150;
     const handler = setTimeout(() => {
@@ -102,7 +106,6 @@ export default function ArtistGallery() {
     return () => clearTimeout(handler);
   }, [searchQuery, artists]);
 
-  // Close info modal on any key press
   useEffect(() => {
     if (!showInfoModal) return;
     const handleKeyDown = () => setShowInfoModal(false);
@@ -110,7 +113,6 @@ export default function ArtistGallery() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showInfoModal]);
 
-  // Normalize URL helper
   const normalizeUrl = (url: string) => {
     if (!/^https?:\/\//i.test(url)) {
       return `https://trackerhub.cx/sh/${url}`;
@@ -118,7 +120,6 @@ export default function ArtistGallery() {
     return url;
   };
 
-  // Handle artist card click
   const handleArtistClick = (url: string) => {
     const fullUrl = normalizeUrl(url);
     window.open(fullUrl, "_blank", "noopener,noreferrer");
@@ -159,15 +160,17 @@ export default function ArtistGallery() {
 
   return (
     <div className="min-h-screen bg-black p-6">
-      <button
-        onClick={() => setShowInfoModal(!showInfoModal)}
-        className="fixed top-6 left-6 z-50 p-3 bg-black border-2 border-white/40 text-white hover:bg-white hover:text-black hover:border-white focus:border-white transition-colors rounded-2xl"
-        aria-label={showInfoModal ? "Close info modal" : "Open info menu"}
-      >
-        {showInfoModal ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-      </button>
+      {!isMobile && (
+        <button
+          onClick={() => setShowInfoModal(!showInfoModal)}
+          className="fixed top-6 left-6 z-50 p-3 bg-black border-2 border-white/40 text-white hover:bg-white hover:text-black hover:border-white focus:border-white transition-colors rounded-2xl"
+          aria-label={showInfoModal ? "Close info modal" : "Open info menu"}
+        >
+          {showInfoModal ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      )}
 
-      {showInfoModal && (
+      {showInfoModal && !isMobile && (
         <div
           className="fixed inset-0 z-40 bg-black bg-opacity-50"
           onClick={() => setShowInfoModal(false)}
@@ -246,56 +249,45 @@ export default function ArtistGallery() {
             >
               <CardContent className="p-4">
                 <div className="aspect-square w-full mb-3 bg-white flex items-center justify-center overflow-hidden rounded-lg">
-                <img
-  src={`https://assets.artistgrid.cx/img/${artist.imageFilename}`}
-  alt={artist.name}
-  className="w-full h-full object-cover"
-  onError={(e) => {
-    const target = e.target as HTMLImageElement;
-    target.src = `/placeholder.svg?height=200&width=200&text=${encodeURIComponent(
-      artist.name.charAt(0)
-    )}&bg=000000&color=ffffff`;
-  }}
-/>
-
+                  <img
+                    src={`https://assets.artistgrid.cx/img/${artist.imageFilename}`}
+                    alt={artist.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = `/placeholder.svg?height=200&width=200&text=${encodeURIComponent(
+                        artist.name.charAt(0)
+                      )}&bg=000000&color=ffffff`;
+                    }}
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-white group-hover:text-black text-sm leading-tight transition-colors">
                     {artist.name}
                   </h3>
-
                   <CopyIcon
-  className="w-4 h-4 p-0 text-white group-hover:text-black transition-colors cursor-pointer"
-  onClick={(e) => {
-    e.stopPropagation();
-
-    // Get full normalized URL
-    const fullUrl = normalizeUrl(artist.url);
-
-    // Copy to clipboard
-    navigator.clipboard.writeText(fullUrl);
-
-    // Optional animation
-    const target = e.currentTarget;
-    target.animate(
-      [
-        { transform: "scale(1)" },
-        { transform: "scale(1.1)" },
-        { transform: "scale(1)" },
-      ],
-      {
-        duration: 200,
-        easing: "ease-in-out",
-      }
-    );
-
-    // Optional: show toast that full URL was copied
-    toast({
-      title: "Copied!",
-      description: `${fullUrl} copied to clipboard.`,
-    });
-  }}
-/>
+                    className="w-4 h-4 p-0 text-white group-hover:text-black transition-colors cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const fullUrl = normalizeUrl(artist.url);
+                      navigator.clipboard.writeText(fullUrl);
+                      e.currentTarget.animate(
+                        [
+                          { transform: "scale(1)" },
+                          { transform: "scale(1.1)" },
+                          { transform: "scale(1)" },
+                        ],
+                        {
+                          duration: 200,
+                          easing: "ease-in-out",
+                        }
+                      );
+                      toast({
+                        title: "Copied!",
+                        description: `${fullUrl} copied to clipboard.`,
+                      });
+                    }}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -305,6 +297,54 @@ export default function ArtistGallery() {
         {filteredArtists.length === 0 && !loading && (
           <div className="text-center py-12">
             <p className="text-white">No artists found.</p>
+          </div>
+        )}
+
+        {/* Always show About section on mobile */}
+        {isMobile && (
+          <div className="mt-12 px-4">
+            <div className="bg-black border-2 border-white p-6 rounded-2xl text-white space-y-4 text-sm">
+              <h2 className="text-xl font-bold underline text-center mb-2">
+                About ArtistGrid
+              </h2>
+              <p>
+                This website is owned &amp; maintained by{" "}
+                <a
+                  href="https://discord.com/users/454283756258197544"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  justAMZ
+                </a>{" "}
+                and{" "}
+                <a
+                  href="https://prigoana.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  eduardprigoana
+                </a>
+                . All original trackers referenced on this site can be found in{" "}
+                <a
+                  href="https://docs.google.com/spreadsheets/d/1zoOIaNbBvfuL3sS3824acpqGxOdSZSIHM8-nI9C-Vfc/htmlview"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  this Google Sheet
+                </a>
+                .
+              </p>
+              <p>
+                Note: if a tracker doesn't load or has little content, visit the link above.
+                We are not affiliated with TrackerHub or the artists listed here.
+              </p>
+              {visitorCount !== null && (
+                <p className="text-xs text-gray-300">You are visitor #{visitorCount}</p>
+              )}
+            </div>
           </div>
         )}
       </div>
