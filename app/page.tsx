@@ -29,30 +29,53 @@ export default function ArtistGallery() {
     return artistName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".png";
   };
 
-  const parseCSV = (csvText: string): Artist[] => {
-    const lines = csvText.trim().split("\n");
-    const artists: Artist[] = [];
+const parseCSV = (csvText: string): Artist[] => {
+  const lines = csvText.trim().split("\n");
+  const artists: Artist[] = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line) {
-        const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-        if (matches && matches.length >= 2) {
-          const name = matches[0].replace(/^"|"$/g, "").trim();
-          const url = matches[1].replace(/^"|"$/g, "").trim();
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line) {
+      const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+      if (matches && matches.length >= 2) {
+        const name = matches[0].replace(/^"|"$/g, "").trim();
+        const url = matches[1].replace(/^"|"$/g, "").trim();
 
-          if (name && url) {
-            artists.push({
-              name,
-              url,
-              imageFilename: getImageFilename(name),
-            });
-          }
+        if (name && url) {
+          artists.push({
+            name,
+            url,
+            imageFilename: getImageFilename(name),
+          });
         }
       }
     }
-    return artists;
-  };
+  }
+
+  // Deduplicate names
+  const nameCountMap: Record<string, number> = {};
+
+  return artists.map((artist) => {
+    const baseName = artist.name;
+    const count = nameCountMap[baseName] || 0;
+    nameCountMap[baseName] = count + 1;
+
+    let newName = baseName;
+    if (count === 1) {
+      // Second occurrence, add [Alt]
+      newName = `${baseName} [Alt]`;
+    } else if (count > 1) {
+      // Third or more occurrence, add [Alt #x]
+      newName = `${baseName} [Alt #${count - 1}]`;
+    }
+    return {
+      ...artist,
+      name: newName,
+      imageFilename: getImageFilename(newName), // keep original filename based on baseName
+    };
+  });
+};
+
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 640);
@@ -129,7 +152,7 @@ export default function ArtistGallery() {
     return (
       <div className="min-h-screen bg-black p-6">
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             {Array.from({ length: 10 }).map((_, i) => (
               <Card
                 key={i}
@@ -255,17 +278,12 @@ export default function ArtistGallery() {
             >
               <CardContent className="p-4">
                 <div className="aspect-square w-full mb-3 bg-white flex items-center justify-center overflow-hidden rounded-lg">
-                  <img
-                    src={`https://assets.artistgrid.cx/img/${artist.imageFilename}`}
-                    alt={artist.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = `/placeholder.svg?height=200&width=200&text=${encodeURIComponent(
-                        artist.name.charAt(0)
-                      )}&bg=000000&color=ffffff`;
-                    }}
-                  />
+<img
+  src={`https://assets.artistgrid.cx/img/${artist.imageFilename}`}
+  alt={artist.name}
+  className="w-full h-full object-cover"
+/>
+
                 </div>
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-white group-hover:text-black text-sm leading-tight transition-colors">
