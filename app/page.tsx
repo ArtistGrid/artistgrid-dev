@@ -94,7 +94,7 @@ const parseCSV = (csvText: string): Artist[] => {
   useEffect(() => {
     const fetchArtists = async () => {
       try {
-        const response = await fetch("./sheet.csv");
+        const response = await fetch("https://sheets.artistgrid.cx/artists.csv");
         if (!response.ok) throw new Error("Failed to fetch CSV data");
 
         const csvText = await response.text();
