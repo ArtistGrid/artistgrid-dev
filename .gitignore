@@ -6,7 +6,8 @@
 # next.js
 /.next/
 /out/
-
+/target
+/.env
 # production
 /build
 
