@@ -190,6 +190,13 @@
             white-space: nowrap;
         }
 
+        .tippy-btn {
+            margin-top: 12px;
+            padding: 6px 12px;
+
+            width: 100%;
+        }
+
         .btn:hover {
             background: var(--neutral-800);
             border-color: var(--neutral-700);
@@ -987,7 +994,8 @@
     <div class="toast" id="toast">Link copied to clipboard!</div>
 
     <audio id="audioPlayer"></audio>
-
+    <script src="https://unpkg.com/@popperjs/core@2"></script>
+    <script src="https://unpkg.com/tippy.js@6"></script>
     <script>
         const API_BASE = 'https://api.artistgrid.cx/get';
         const TRACKER_ID_LENGTH = 44;
@@ -1142,14 +1150,6 @@
                 return track.url;
             }
 
-            if (track.quality && isUrl(track.quality)) {
-                return track.quality;
-            }
-
-            if (track.available_length && isUrl(track.available_length)) {
-                return track.available_length;
-            }
-
             return null;
         }
 
@@ -1168,6 +1168,27 @@
             }
 
             return null;
+        }
+
+        function getDownloadableUrl(url) {
+            if (!url) return null;
+
+            const pillowsMatch = url.match(/pillows\.su\/f\/([a-f0-9]+)/);
+            if (pillowsMatch) {
+                return `https://api.pillows.su/api/download/${pillowsMatch[1]}`;
+            }
+
+            const frosteMatch = url.match(/music\.froste\.lol\/song\/([a-f0-9]+)/);
+            if (frosteMatch) {
+                return `https://music.froste.lol/song/${frosteMatch[1]}/download`;
+            }
+
+            return null;
+        }
+
+        function isDownloadableUrl(url) {
+            if (!url) return false;
+            return url.includes('pillows.su/f/') || url.includes('music.froste.lol/song/');
         }
 
         function isPlayableUrl(url) {
@@ -1390,6 +1411,54 @@ Check console for more details.</pre>
             }
 
             content.innerHTML = html;
+
+            eras.forEach(era => {
+              Object.values(era[1].data).forEach(sub_era => {
+                sub_era.forEach(track => {
+                  const trackUrl = getTrackUrl(track);
+                  const trackId = generateTrackId(trackUrl || track.name + track.extra + track.description);
+                  console.log(track)
+                  const tippy_element = document.createElement("span");
+
+                  const description = document.createElement("p");
+                  description.innerText = track.description;
+
+                  tippy_element.appendChild(description)
+
+                  if(isDownloadableUrl(trackUrl)) {
+                    const button = document.createElement("button")
+
+                    button.className = "btn btn-primary tippy-btn"
+                    button.innerText = "Download"
+
+                    button.addEventListener("click", () => {
+                      window.open(getDownloadableUrl(trackUrl), "_blank")
+                    })
+
+                    tippy_element.appendChild(button)
+                  }
+
+                  if(trackUrl) {
+                    const button = document.createElement("button")
+
+                    button.className = "btn btn-primary tippy-btn"
+                    button.innerText = "Original Link"
+
+                    button.addEventListener("click", () => {
+                      window.open(trackUrl, "_blank")
+                    })
+                    tippy_element.appendChild(button)
+                  }
+
+                  tippy("#track-" + trackId, {
+                    content: tippy_element,
+                    interactive: trackUrl || isDownloadableUrl(trackUrl),
+                    trigger: 'click',
+                  });
+                })
+              })
+            })
+
             buildTrackList();
         }
 
@@ -1398,32 +1467,25 @@ Check console for more details.</pre>
                 return { html: '', trackCount: 0 };
             }
 
-            let playableTrackCount = 0;
             let categoriesHtml = '';
+            let trackCount = 0
 
             for (const [category, tracks] of Object.entries(era.data)) {
                 if (!Array.isArray(tracks)) continue;
 
-                const playableTracks = tracks.filter(t => {
-                    const url = getTrackUrl(t);
-                    return url && isPlayableUrl(url);
-                });
-
-                if (playableTracks.length === 0) continue;
-
-                playableTrackCount += playableTracks.length;
+                trackCount += tracks.length
 
                 categoriesHtml += `
                     <div class="category">
                         <h4 class="category-title">${escapeHtml(category)}</h4>
                         <div class="track-list">
-                            ${playableTracks.map(track => renderTrack(track)).join('')}
+                            ${tracks.map(track => renderTrack(track)).join('')}
                         </div>
                     </div>
                 `;
             }
 
-            if (!categoriesHtml || playableTrackCount === 0) {
+            if (!categoriesHtml || trackCount == 0) {
                 return { html: '', trackCount: 0 };
             }
 
@@ -1440,7 +1502,7 @@ Check console for more details.</pre>
                             <div class="era-title">${escapeHtml(eraName)}</div>
                             ${era.extra ? `<div class="era-extra">${escapeHtml(era.extra)}</div>` : ''}
                             <div class="era-stats">
-                                <span class="era-stat">${playableTrackCount} track${playableTrackCount !== 1 ? 's' : ''}</span>
+                                <span class="era-stat">${trackCount} track${trackCount !== 1 ? 's' : ''}</span>
                             </div>
                         </div>
                         <svg class="era-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1454,25 +1516,19 @@ Check console for more details.</pre>
                 </div>
             `;
 
-            return { html, trackCount: playableTrackCount };
+            return { html, trackCount: trackCount };
         }
 
         function renderTrack(track) {
             if (!track) return '';
 
             const trackUrl = getTrackUrl(track);
-            if (!trackUrl) return '';
 
-            const trackId = generateTrackId(trackUrl);
+            const trackId = generateTrackId(trackUrl || track.name + track.extra + track.description) ;
             const name = track.name || 'Unknown Track';
             const extra = track.extra || '';
 
-            let qualityText = '';
-            if (track.quality && !isUrl(track.quality)) {
-                qualityText = track.quality;
-            } else if (track.available_length && !isUrl(track.available_length)) {
-                qualityText = track.available_length;
-            }
+            let qualityText = track.quality;
 
             const metaItems = [];
             if (track.type && track.type !== 'Unknown' && track.type !== 'N/A')
@@ -1484,11 +1540,16 @@ Check console for more details.</pre>
 
             return `
                 <div class="track-item" id="track-${trackId}" data-url="${escapeAttr(trackUrl)}" data-name="${escapeAttr(name)}" data-extra="${escapeAttr(extra)}">
-                    <button class="play-btn" onclick="playTrackById('${trackId}')">
+                  ${trackUrl ? getPlayableUrl(trackUrl) ? `
+                  <button class="play-btn" onclick="playTrackById('${trackId}')">
                         <svg viewBox="0 0 24 24" fill="currentColor">
                             <path d="M8 5v14l11-7z"/>
                         </svg>
                     </button>
+                    ` : `<button class="play-btn" onclick="playTrackById('${trackId}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                    </button>
+                      `: ""}
                     <div class="track-info">
                         <div class="track-name">${escapeHtml(name)}</div>
                         ${extra ? `<div class="track-extra">${escapeHtml(extra)}</div>` : ''}
