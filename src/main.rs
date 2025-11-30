@@ -1,8 +1,7 @@
 use axum::{
     body::Body,
-    extract::{Path, State},
-    http::{header, HeaderValue, Method, Request, StatusCode},
-    middleware::{self, Next},
+    extract::State,
+    http::{header, HeaderValue, Method, Request, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -13,10 +12,6 @@ use reqwest::Client;
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
 use tracing::{error, info, warn};
-
-// ============================================================================
-// Configuration
-// ============================================================================
 
 #[derive(Debug, Clone)]
 struct Config {
@@ -32,8 +27,8 @@ struct Config {
 
 impl Config {
     fn from_env() -> Result<Self, String> {
-        let api_key = std::env::var("API_KEY")
-            .map_err(|_| "API_KEY environment variable is required")?;
+        let api_key =
+            std::env::var("API_KEY").map_err(|_| "API_KEY environment variable is required")?;
 
         if api_key.is_empty() {
             return Err("API_KEY cannot be empty".to_string());
@@ -64,10 +59,6 @@ impl Config {
     }
 }
 
-// ============================================================================
-// Application State
-// ============================================================================
-
 #[derive(Clone)]
 struct AppState {
     client: Client,
@@ -82,10 +73,6 @@ struct CachedResponse {
     content_type: Option<String>,
 }
 
-// ============================================================================
-// CORS Origin Validation
-// ============================================================================
-
 fn is_allowed_origin(origin: &str, config: &Config) -> bool {
     let host = origin
         .strip_prefix("https://")
@@ -97,14 +84,10 @@ fn is_allowed_origin(origin: &str, config: &Config) -> bool {
     host == config.allowed_origin_exact || host.ends_with(&config.allowed_origin_suffix)
 }
 
-// ============================================================================
-// CORS Middleware
-// ============================================================================
-
 async fn cors_middleware(
     State(state): State<AppState>,
     request: Request<Body>,
-    next: Next,
+    next: axum::middleware::Next,
 ) -> Response {
     let origin = request
         .headers()
@@ -112,7 +95,6 @@ async fn cors_middleware(
         .and_then(|v| v.to_str().ok())
         .map(String::from);
 
-    // Handle preflight requests
     if request.method() == Method::OPTIONS {
         if let Some(ref origin_str) = origin {
             if is_allowed_origin(origin_str, &state.config) {
@@ -132,7 +114,6 @@ async fn cors_middleware(
             .unwrap();
     }
 
-    // Validate origin for non-preflight requests
     if let Some(ref origin_str) = origin {
         if !is_allowed_origin(origin_str, &state.config) {
             warn!("Blocked request from origin: {}", origin_str);
@@ -145,7 +126,6 @@ async fn cors_middleware(
 
     let mut response = next.run(request).await;
 
-    // Add CORS headers to response
     if let Some(origin_str) = origin {
         if is_allowed_origin(&origin_str, &state.config) {
             let headers = response.headers_mut();
@@ -164,17 +144,11 @@ async fn cors_middleware(
     response
 }
 
-// ============================================================================
-// Proxy Handler
-// ============================================================================
+async fn proxy_all(State(state): State<AppState>, uri: Uri) -> impl IntoResponse {
+    let path = uri.path();
+    let query = uri.query().map(|q| format!("?{}", q)).unwrap_or_default();
+    let cache_key = format!("{}{}", path, query);
 
-async fn proxy_handler(
-    State(state): State<AppState>,
-    Path(path): Path<String>,
-) -> impl IntoResponse {
-    let cache_key = path.clone();
-
-    // Check cache first
     if let Some(cached) = state.cache.get(&cache_key).await {
         info!("Cache HIT for: {}", cache_key);
         return build_response(&cached, true, &state.config);
@@ -182,10 +156,8 @@ async fn proxy_handler(
 
     info!("Cache MISS for: {}", cache_key);
 
-    // Build upstream URL
-    let upstream_url = format!("{}/get/{}", state.config.upstream_url, path);
+    let upstream_url = format!("{}{}{}", state.config.upstream_url, path, query);
 
-    // Make request to upstream
     let response = match state
         .client
         .get(&upstream_url)
@@ -195,11 +167,11 @@ async fn proxy_handler(
     {
         Ok(resp) => resp,
         Err(e) => {
-            error!("Upstream request failed: {}", e);
+            error!("Upstream request failed for {}: {}", path, e);
             return (
                 StatusCode::BAD_GATEWAY,
                 [(header::CONTENT_TYPE, "application/json")],
-                format!(r#"{{"error": "Upstream request failed: {}"}}"#, e),
+                r#"{"error": "Upstream request failed"}"#.to_string(),
             )
                 .into_response();
         }
@@ -219,7 +191,7 @@ async fn proxy_handler(
             return (
                 StatusCode::BAD_GATEWAY,
                 [(header::CONTENT_TYPE, "application/json")],
-                format!(r#"{{"error": "Failed to read response: {}"}}"#, e),
+                r#"{"error": "Failed to read response"}"#.to_string(),
             )
                 .into_response();
         }
@@ -231,9 +203,8 @@ async fn proxy_handler(
         content_type,
     };
 
-    // Cache successful responses only
     if status >= 200 && status < 300 {
-        state.cache.insert(cache_key, cached.clone()).await;
+        state.cache.insert(cache_key.clone(), cached.clone()).await;
     }
 
     build_response(&cached, false, &state.config)
@@ -258,11 +229,7 @@ fn build_response(cached: &CachedResponse, from_cache: bool, config: &Config) ->
         .unwrap()
 }
 
-// ============================================================================
-// Health & Stats Endpoints
-// ============================================================================
-
-async fn health_check() -> impl IntoResponse {
+async fn local_health() -> impl IntoResponse {
     (StatusCode::OK, "OK")
 }
 
@@ -281,56 +248,15 @@ async fn cache_stats(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn config_info(State(state): State<AppState>) -> impl IntoResponse {
-    let info = serde_json::json!({
-        "upstream_url": &state.config.upstream_url,
-        "cache_ttl_seconds": state.config.cache_ttl_seconds,
-        "cache_max_capacity": state.config.cache_max_capacity,
-        "allowed_origin_exact": &state.config.allowed_origin_exact,
-        "allowed_origin_suffix": &state.config.allowed_origin_suffix,
-        "api_key_set": !state.config.api_key.is_empty()
-    });
-
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        info.to_string(),
-    )
-}
-
-// ============================================================================
-// Main
-// ============================================================================
-
 #[tokio::main]
 async fn main() {
-    // Load .env file FIRST - before anything else
-    match dotenvy::dotenv() {
-        Ok(path) => println!("✓ Loaded .env from: {}", path.display()),
-        Err(e) => {
-            eprintln!("⚠ Warning: Could not load .env file: {}", e);
-            eprintln!("  Make sure .env exists in the current directory");
-            eprintln!("  Current directory: {:?}", std::env::current_dir().unwrap_or_default());
-        }
-    }
+    dotenvy::dotenv().ok();
 
-    // Debug: Print all relevant env vars
-    println!("\n=== Environment Variables ===");
-    println!("API_KEY: {}", if std::env::var("API_KEY").is_ok() { "[SET]" } else { "[NOT SET]" });
-    println!("UPSTREAM_URL: {}", std::env::var("UPSTREAM_URL").unwrap_or_else(|_| "[default]".into()));
-    println!("HOST: {}", std::env::var("HOST").unwrap_or_else(|_| "[default]".into()));
-    println!("PORT: {}", std::env::var("PORT").unwrap_or_else(|_| "[default]".into()));
-    println!("=============================\n");
-
-    // Load configuration from environment
     let config = Config::from_env().unwrap_or_else(|e| {
-        eprintln!("✗ Configuration error: {}", e);
-        eprintln!("\nMake sure your .env file contains:");
-        eprintln!("  API_KEY=your_api_key_here");
+        eprintln!("Configuration error: {}", e);
         std::process::exit(1);
     });
 
-    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -339,14 +265,9 @@ async fn main() {
         .init();
 
     info!("Starting tracker-proxy v{}", env!("CARGO_PKG_VERSION"));
-    info!("Upstream URL: {}", config.upstream_url);
-    info!("Cache TTL: {} seconds", config.cache_ttl_seconds);
-    info!(
-        "Allowed origins: {} | *{}",
-        config.allowed_origin_exact, config.allowed_origin_suffix
-    );
+    info!("Upstream: {}", config.upstream_url);
+    info!("Cache TTL: {}s", config.cache_ttl_seconds);
 
-    // Build optimized HTTP client
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
@@ -359,27 +280,31 @@ async fn main() {
         .build()
         .expect("Failed to create HTTP client");
 
-    // Build cache
     let cache: Cache<String, CachedResponse> = Cache::builder()
         .max_capacity(config.cache_max_capacity)
         .time_to_live(Duration::from_secs(config.cache_ttl_seconds))
         .build();
 
-    let state = AppState { client, cache, config: config.clone() };
+    let state = AppState {
+        client,
+        cache,
+        config: config.clone(),
+    };
 
-    // Build router with stateful middleware
     let app = Router::new()
-        .route("/health", get(health_check))
-        .route("/stats", get(cache_stats))
-        .route("/config", get(config_info))
-        .route("/get/*path", get(proxy_handler))
-        .layer(axum::middleware::from_fn_with_state(state.clone(), cors_middleware))
+        .route("/_health", get(local_health))
+        .route("/_stats", get(cache_stats))
+        .fallback(proxy_all)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            cors_middleware,
+        ))
         .layer(CompressionLayer::new())
         .with_state(state);
 
     let addr: std::net::SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
-        .expect("Invalid HOST:PORT configuration");
+        .expect("Invalid HOST:PORT");
 
     info!("Listening on http://{}", addr);
 
@@ -392,8 +317,6 @@ async fn main() {
 }
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to install CTRL+C handler");
-    info!("Shutdown signal received, gracefully stopping...");
+    tokio::signal::ctrl_c().await.ok();
+    info!("Shutting down...");
 }
