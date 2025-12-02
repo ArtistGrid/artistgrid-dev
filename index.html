@@ -1238,11 +1238,17 @@
 
                 const response = await fetch(apiUrl, {
                     signal: controller.signal,
+                    redirect: "manual",
                     headers: {
                         'Accept': 'application/json',
                     }
                 });
 
+                if(response.type == "opaqueredirect") {
+                  // GGs
+                  location.href = apiUrl;
+                  return;
+                }
                 clearTimeout(timeoutId);
 
                 console.log('[ArtistGrid] Response status:', response.status);
