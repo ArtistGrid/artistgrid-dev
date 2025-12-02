@@ -9,7 +9,7 @@ use axum::{
 };
 use bytes::Bytes;
 use moka::future::Cache;
-use reqwest::Client;
+use reqwest::{Client, redirect::Policy};
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
 use tracing::{error, info, warn};
@@ -205,7 +205,27 @@ async fn proxy_handler(
         }
     };
 
-    let status = response.status().as_u16();
+    let status = response.status();
+
+    if status.is_redirection() {
+        if let Some(location) = response.headers().get(header::LOCATION) {
+            return Response::builder()
+                .status(status)
+                .header(header::LOCATION, location.clone())
+                .body(Body::empty())
+                .unwrap();
+        }
+
+        return (
+            StatusCode::BAD_GATEWAY,
+            [(header::CONTENT_TYPE, "application/json")],
+            r#"{"error": "Upstream returned redirect without Location"}"#,
+        )
+            .into_response();
+    }
+
+    let status_u16 = status.as_u16();
+
     let content_type = response
         .headers()
         .get(header::CONTENT_TYPE)
@@ -226,13 +246,13 @@ async fn proxy_handler(
     };
 
     let cached = CachedResponse {
-        status,
+        status: status_u16,
         body,
         content_type,
     };
 
     // Cache successful responses only
-    if status >= 200 && status < 300 {
+    if status_u16 >= 200 && status_u16 < 300 {
         state.cache.insert(cache_key, cached.clone()).await;
     }
 
@@ -354,6 +374,7 @@ async fn main() {
         .pool_idle_timeout(Duration::from_secs(90))
         .tcp_keepalive(Duration::from_secs(60))
         .tcp_nodelay(true)
+        .redirect(Policy::none())
         .gzip(true)
         .brotli(true)
         .build()

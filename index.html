@@ -997,7 +997,10 @@
     <script src="https://unpkg.com/@popperjs/core@2"></script>
     <script src="https://unpkg.com/tippy.js@6"></script>
     <script>
-        const API_BASE = 'https://api.artistgrid.cx/get';
+        let API_BASE = 'https://api.artistgrid.cx/get';
+        if(location.hostname == "127.0.0.1" || location.hostname == "localhost")
+            API_BASE = "http://localhost:3000/get";
+
         const TRACKER_ID_LENGTH = 44;
 
         let currentData = null;
